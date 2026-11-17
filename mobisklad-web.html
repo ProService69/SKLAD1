@@ -15,21 +15,36 @@ body{background:#f1f5f9;color:#1e293b;font-family:system-ui,-apple-system,'Segoe
 .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
 @keyframes fl{0%{background:#dbeafe}100%{background:transparent}}.flash{animation:fl 1.3s ease-out}
 dialog{border:0;border-radius:16px;padding:0;max-width:34rem;width:calc(100% - 2rem)}dialog::backdrop{background:rgba(15,23,42,.55)}
+body.seller .adm{display:none!important}
 </style>
 </head>
 <body>
-<div class="max-w-6xl mx-auto p-3 sm:p-5 space-y-4">
+<div id="loginScreen" class="fixed inset-0 z-[60] bg-slate-100 flex items-center justify-center p-4 overflow-y-auto">
+  <form onsubmit="doLogin(event)" class="bg-white rounded-2xl border shadow-lg p-6 w-full max-w-sm space-y-3">
+    <div class="text-center"><div class="text-3xl">📱</div><h1 class="text-xl font-bold">МобиСклад</h1>
+      <p id="lgSub" class="text-xs text-slate-500">Войдите в свою учетную запись</p></div>
+    <input id="lgUser" autocomplete="username" required placeholder="Логин" class="w-full px-3 py-2.5 rounded-xl border bg-slate-50 text-sm outline-none focus:bg-white focus:border-blue-500">
+    <input id="lgPass" type="password" autocomplete="current-password" required placeholder="Пароль" class="w-full px-3 py-2.5 rounded-xl border bg-slate-50 text-sm outline-none focus:bg-white focus:border-blue-500">
+    <input id="lgPass2" type="password" autocomplete="new-password" placeholder="Повторите пароль" class="hidden w-full px-3 py-2.5 rounded-xl border bg-slate-50 text-sm outline-none focus:bg-white focus:border-blue-500">
+    <label class="flex items-center gap-2 text-xs text-slate-600"><input id="lgRemember" type="checkbox" checked> Запомнить на этом устройстве</label>
+    <p id="lgErr" class="text-xs text-rose-600 min-h-[1rem]"></p>
+    <button id="lgBtn" class="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm">Войти</button>
+  </form>
+</div>
+<div id="app" class="hidden max-w-6xl mx-auto p-3 sm:p-5 space-y-4">
 
 <header class="flex flex-wrap items-center justify-between gap-2">
   <div><h1 class="text-xl font-bold">📱 МобиСклад</h1><p class="text-xs text-slate-500">Учет мобильных аксессуаров · данные сохраняются в браузере</p></div>
   <div class="flex gap-2">
     <button onclick="toggleSound()" id="sndBtn" class="px-3 py-2 rounded-xl border bg-white text-sm">🔊</button>
-    <button onclick="saveBackup()" class="px-3 py-2 rounded-xl border bg-white text-sm">💾 В файл</button>
-    <label class="relative px-3 py-2 rounded-xl border bg-white text-sm cursor-pointer overflow-hidden">📂 Из файла
+    <button id="whoBtn" onclick="logout()" title="Выйти" class="px-3 py-2 rounded-xl border bg-white text-sm">👤</button>
+    <button onclick="openUsers()" title="Пользователи" class="adm px-3 py-2 rounded-xl border bg-white text-sm">👥</button>
+    <button onclick="saveBackup()" class="adm px-3 py-2 rounded-xl border bg-white text-sm">💾 В файл</button>
+    <label class="adm relative px-3 py-2 rounded-xl border bg-white text-sm cursor-pointer overflow-hidden">📂 Из файла
       <input type="file" id="bkFile" onchange="loadBackup(event)" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"></label>
-    <label class="relative px-3 py-2 rounded-xl border bg-white text-sm cursor-pointer overflow-hidden">📊 Из Excel
+    <label class="adm relative px-3 py-2 rounded-xl border bg-white text-sm cursor-pointer overflow-hidden">📊 Из Excel
       <input type="file" id="xlFile" onchange="xlPick(event)" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"></label>
-    <button onclick="openForm()" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium">+ Добавить товар</button>
+    <button onclick="openForm()" class="adm px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium">+ Добавить товар</button>
   </div>
 </header>
 
@@ -52,9 +67,9 @@ dialog{border:0;border-radius:16px;padding:0;max-width:34rem;width:calc(100% - 2
 
 <nav class="flex gap-1.5 overflow-x-auto text-sm" id="tabs">
   <button data-t="stock" onclick="tab('stock')" class="px-4 py-2 rounded-xl">Склад</button>
-  <button data-t="receipt" onclick="tab('receipt')" class="px-4 py-2 rounded-xl">Приемка</button>
+  <button data-t="receipt" onclick="tab('receipt')" class="adm px-4 py-2 rounded-xl">Приемка</button>
   <button data-t="pos" onclick="tab('pos')" class="px-4 py-2 rounded-xl">Касса <span id="cartBadge" class="hidden ml-1 bg-emerald-500 text-white text-xs rounded-full px-1.5"></span></button>
-  <button data-t="log" onclick="tab('log')" class="px-4 py-2 rounded-xl">Журнал и отчеты</button>
+  <button data-t="log" onclick="tab('log')" class="adm px-4 py-2 rounded-xl">Журнал и отчеты</button>
 </nav>
 
 <!-- СКЛАД -->
@@ -67,11 +82,11 @@ dialog{border:0;border-radius:16px;padding:0;max-width:34rem;width:calc(100% - 2
       <select id="st" onchange="renderStock()" class="px-3 py-2 rounded-xl border bg-slate-50 text-sm">
         <option value="all">Все остатки</option><option value="low">Мало</option><option value="out">Нет в наличии</option>
       </select>
-      <button onclick="exportCSV()" class="px-3 py-2 rounded-xl border text-sm">⬇ CSV</button>
+      <button onclick="exportCSV()" class="adm px-3 py-2 rounded-xl border text-sm">⬇ CSV</button>
     </div>
     <div class="overflow-x-auto"><table class="w-full text-sm text-left">
       <thead class="bg-slate-50 text-[11px] uppercase text-slate-500"><tr>
-        <th class="p-3">Артикул / ШК</th><th class="p-3">Товар</th><th class="p-3">Совместимость</th><th class="p-3 text-right">Закупка</th><th class="p-3 text-right">Розница</th><th class="p-3 text-center">Остаток</th><th class="p-3 text-right">Действия</th></tr></thead>
+        <th class="p-3">Артикул / ШК</th><th class="p-3">Товар</th><th class="p-3">Совместимость</th><th class="p-3 text-right adm">Закупка</th><th class="p-3 text-right">Розница</th><th class="p-3 text-center">Остаток</th><th class="p-3 text-right">Действия</th></tr></thead>
       <tbody id="tbody" class="divide-y"></tbody></table></div>
     <div id="sum" class="px-4 py-2 text-xs text-slate-500 bg-slate-50 border-t"></div>
   </div>
@@ -154,6 +169,17 @@ dialog{border:0;border-radius:16px;padding:0;max-width:34rem;width:calc(100% - 2
     <select id="xlPrice" class="w-full mt-1 px-3 py-2 rounded-xl border text-sm text-slate-900"><option value="update">Обновить из файла</option><option value="keep">Не менять</option></select></label>
   <div class="flex justify-end gap-2 pt-2 border-t"><button onclick="$('xlDlg').close()" class="px-4 py-2 rounded-xl border text-sm">Отмена</button>
   <button onclick="xlApply()" class="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold">Загрузить</button></div>
+</div></dialog>
+<dialog id="usrDlg"><div class="p-5 space-y-3">
+  <div class="flex justify-between items-center"><b>Пользователи</b><button onclick="$('usrDlg').close()" class="text-slate-500 text-xl px-2">✕</button></div>
+  <div id="usrList" class="divide-y border rounded-xl text-sm"></div>
+  <form onsubmit="usrSave(event)" class="space-y-2 pt-2 border-t">
+    <div class="text-xs text-slate-500">Добавить пользователя или сменить пароль (введите существующий логин)</div>
+    <div class="grid grid-cols-2 gap-2"><input id="uLogin" required placeholder="Логин" autocomplete="off" class="px-3 py-2 rounded-xl border text-sm"><input id="uPass" type="password" required placeholder="Пароль, от 6 символов" autocomplete="new-password" class="px-3 py-2 rounded-xl border text-sm"></div>
+    <select id="uRole" class="w-full px-3 py-2 rounded-xl border text-sm"><option value="seller">Продавец: без закупочных цен, правок и приемки</option><option value="admin">Администратор: все возможности</option></select>
+    <p id="uErr" class="text-xs text-rose-600 min-h-[1rem]"></p>
+    <button class="w-full py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold">Сохранить</button>
+  </form>
 </div></dialog>
 <dialog id="askDlg"><div class="p-5 space-y-4"><p id="askText" class="text-sm"></p>
   <div class="flex justify-end gap-2"><button onclick="$('askDlg').close()" class="px-4 py-2 rounded-xl border text-sm">Отмена</button>
@@ -254,7 +280,7 @@ function renderKpis(){
   const k=(l,v,s,c='')=>`<div class="bg-white rounded-2xl border p-4"><div class="text-[11px] uppercase text-slate-500">${l}</div><div class="text-2xl font-bold ${c}">${v}</div><div class="text-xs text-slate-500">${s}</div></div>`;
   $('kpis').innerHTML=k('Позиций',P.length,'наименований')+k('Остаток',units+' шт.','на складе')+
     `<button onclick="$('st').value='low';renderStock()" class="text-left bg-white rounded-2xl border p-4 hover:bg-amber-50"><div class="text-[11px] uppercase text-slate-500">Критический остаток</div><div class="text-2xl font-bold text-amber-600">${low.length} поз.</div><div class="text-xs text-rose-600">из них ${out} нет в наличии</div></button>`+
-    k('Стоимость (розн.)',rub(retail),'закупочная '+rub(cost));
+    k('Стоимость (розн.)',rub(retail),'<span class="adm">закупочная '+rub(cost)+'</span>');
 }
 function renderStock(){
   const q=$('q').value.trim().toLowerCase(),c=$('cat').value,s=$('st').value;
@@ -267,13 +293,13 @@ function renderStock(){
     <td class="p-3 whitespace-nowrap"><div class="mono text-xs font-semibold">${esc(p.sku)}</div><div class="mono text-[11px] text-slate-400">${esc(p.barcode)}</div></td>
     <td class="p-3"><div class="font-medium">${esc(p.name)}</div><div class="text-[11px] text-slate-400">${esc(p.category)} · мин. ${p.min}</div></td>
     <td class="p-3 text-xs text-slate-600">${esc(p.compat)}</td>
-    <td class="p-3 text-right text-slate-500 whitespace-nowrap">${rub(p.buy)}</td>
+    <td class="adm p-3 text-right text-slate-500 whitespace-nowrap">${rub(p.buy)}</td>
     <td class="p-3 text-right font-semibold whitespace-nowrap">${rub(p.sell)}</td>
     <td class="p-3 text-center whitespace-nowrap"><span class="px-2.5 py-1 rounded-full text-xs font-semibold border ${b[0]}">${b[1]}</span></td>
     <td class="p-3 text-right whitespace-nowrap"><button onclick="adj(${p.id},-1)" class="w-8 h-8 rounded-lg border hover:bg-rose-50">−</button>
       <button onclick="adj(${p.id},1)" class="w-8 h-8 rounded-lg border hover:bg-emerald-50">+</button>
-      <button onclick="openForm(${p.id})" class="w-8 h-8 rounded-lg border hover:bg-blue-50">✎</button>
-      <button onclick="delProd(${p.id})" class="w-8 h-8 rounded-lg border hover:bg-rose-50 text-rose-500">🗑</button></td></tr>`}).join('')
+      <button onclick="openForm(${p.id})" class="adm w-8 h-8 rounded-lg border hover:bg-blue-50">✎</button>
+      <button onclick="delProd(${p.id})" class="adm w-8 h-8 rounded-lg border hover:bg-rose-50 text-rose-500">🗑</button></td></tr>`}).join('')
     :`<tr><td colspan="7" class="p-10 text-center text-slate-500">Товары не найдены</td></tr>`;
   $('sum').textContent=`Показано ${L.length} из ${S.products.length} позиций`;flashId=null;
 }
@@ -512,6 +538,86 @@ function camPhoto(e){
   img.src=url;
 }
 
+/* ---- вход по логину и паролю ---- */
+const UK='mobisklad.users',SK='mobisklad.sess';
+let me=null,lgFails=0;
+const _enc=new TextEncoder();
+const _b64=b=>btoa(String.fromCharCode(...new Uint8Array(b)));
+const _unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+function newSalt(){return _b64(crypto.getRandomValues(new Uint8Array(16)))}
+async function hashPw(pw,salt){
+  const k=await crypto.subtle.importKey('raw',_enc.encode(pw),'PBKDF2',false,['deriveBits']);
+  return _b64(await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:_unb64(salt),iterations:150000},k,256));
+}
+function getUsers(){try{return JSON.parse(localStorage.getItem(UK))||[]}catch(e){return[]}}
+function setUsers(u){try{localStorage.setItem(UK,JSON.stringify(u))}catch(e){}}
+function lgErr(m){$('lgErr').textContent=m||''}
+function showLogin(){
+  me=null;document.body.classList.remove('seller');
+  $('app').classList.add('hidden');$('loginScreen').classList.remove('hidden');
+  const first=!getUsers().length;
+  $('lgPass2').classList.toggle('hidden',!first);$('lgPass2').required=first;
+  $('lgSub').textContent=first?'Первый запуск: создайте учетную запись администратора':'Войдите в свою учетную запись';
+  $('lgBtn').textContent=first?'Создать и войти':'Войти';
+  $('lgPass').value='';$('lgPass2').value='';lgErr('');
+}
+function enter(u,how){
+  me=u;
+  if(how!=='auto'){try{sessionStorage.removeItem(SK);localStorage.removeItem(SK);(how==='remember'?localStorage:sessionStorage).setItem(SK,u.login)}catch(e){}}
+  document.body.classList.toggle('seller',u.role!=='admin');
+  $('whoBtn').textContent='👤 '+u.login+' · выйти';
+  $('loginScreen').classList.add('hidden');$('app').classList.remove('hidden');
+  $('lgPass').value='';$('lgPass2').value='';
+  renderAll();tab('stock');
+}
+function logout(){try{sessionStorage.removeItem(SK);localStorage.removeItem(SK)}catch(e){}showLogin();$('lgUser').value=''}
+async function doLogin(e){
+  e.preventDefault();
+  if(!window.crypto||!crypto.subtle){lgErr('Для входа нужен защищенный адрес (https).');return}
+  const users=getUsers(),login=$('lgUser').value.trim(),pw=$('lgPass').value;
+  if(!users.length){
+    if(login.length<3){lgErr('Логин: минимум 3 символа');return}
+    if(pw.length<6){lgErr('Пароль: минимум 6 символов');return}
+    if(pw!==$('lgPass2').value){lgErr('Пароли не совпадают');return}
+    const salt=newSalt(),u={login,salt,hash:await hashPw(pw,salt),role:'admin'};
+    setUsers([u]);enter(u,$('lgRemember').checked?'remember':'session');return;
+  }
+  const u=users.find(x=>x.login.toLowerCase()===login.toLowerCase());
+  if(!u||await hashPw(pw,u.salt)!==u.hash){
+    lgFails++;lgErr('Неверный логин или пароль');
+    $('lgBtn').disabled=true;await new Promise(r=>setTimeout(r,Math.min(lgFails,6)*1000));$('lgBtn').disabled=false;return;
+  }
+  lgFails=0;enter(u,$('lgRemember').checked?'remember':'session');
+}
+function initAuth(){
+  let s=null;try{s=sessionStorage.getItem(SK)||localStorage.getItem(SK)}catch(e){}
+  const u=s&&getUsers().find(x=>x.login===s);
+  if(u)enter(u,'auto');else showLogin();
+}
+function openUsers(){
+  if(!me||me.role!=='admin')return;
+  const us=getUsers(),admins=us.filter(u=>u.role==='admin').length;
+  $('usrList').innerHTML=us.map(u=>`<div class="p-2.5 flex items-center justify-between gap-2"><div><b>${esc(u.login)}</b>${u.login===me.login?' <span class="text-xs text-slate-400">(вы)</span>':''}<div class="text-[11px] text-slate-500">${u.role==='admin'?'Администратор':'Продавец'}</div></div>
+    ${u.login!==me.login&&!(u.role==='admin'&&admins<2)?`<button data-l="${esc(u.login)}" onclick="usrDel(this.dataset.l)" class="px-2 py-1 rounded-lg border text-rose-600 text-xs">Удалить</button>`:''}</div>`).join('');
+  $('uErr').textContent='';$('usrDlg').showModal();
+}
+function usrDel(login){
+  ask(`Удалить пользователя «${login}»?`,()=>{setUsers(getUsers().filter(u=>u.login!==login));toast('Пользователь удален','success');openUsers()});
+}
+async function usrSave(e){
+  e.preventDefault();
+  const login=$('uLogin').value.trim(),pw=$('uPass').value,role=$('uRole').value,er=m=>{$('uErr').textContent=m};
+  if(login.length<3)return er('Логин: минимум 3 символа');
+  if(pw.length<6)return er('Пароль: минимум 6 символов');
+  const us=getUsers(),i=us.findIndex(u=>u.login.toLowerCase()===login.toLowerCase());
+  if(i>=0&&us[i].role==='admin'&&role!=='admin'&&us.filter(u=>u.role==='admin').length<2)return er('Нельзя понизить единственного администратора');
+  const salt=newSalt(),rec={login:i>=0?us[i].login:login,salt,hash:await hashPw(pw,salt),role};
+  if(i>=0)us[i]=rec;else us.push(rec);
+  setUsers(us);
+  if(me&&rec.login===me.login){me=rec;document.body.classList.toggle('seller',me.role!=='admin')}
+  $('uLogin').value='';$('uPass').value='';toast(i>=0?'Данные пользователя обновлены':'Пользователь добавлен','success');openUsers();
+}
+
 /* ---- загрузка остатков из Excel (столбцы: Имя, Штрих, Закуп, Продажа, Кол-во) ---- */
 let xlPlan=[];
 function xlSec(t){
@@ -615,7 +721,7 @@ function importOnce(){
   setTimeout(()=>toast('Из Excel добавлено позиций: '+n,'success'),400);
 }
 importOnce();
-setMode('search');tab('stock');renderAll();
+setMode('search');tab('stock');renderAll();initAuth();
 </script>
 </body>
 </html>
