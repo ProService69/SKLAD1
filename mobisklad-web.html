@@ -37,6 +37,7 @@ body.seller .adm{display:none!important}
   <div><h1 class="text-xl font-bold">📱 МобиСклад</h1><p class="text-xs text-slate-500">Учет мобильных аксессуаров · данные сохраняются в браузере</p></div>
   <div class="flex gap-2">
     <button onclick="toggleSound()" id="sndBtn" class="px-3 py-2 rounded-xl border bg-white text-sm">🔊</button>
+    <button onclick="openYd()" title="Яндекс Диск" class="px-3 py-2 rounded-xl border bg-white text-sm">☁</button>
     <button id="whoBtn" onclick="logout()" title="Выйти" class="px-3 py-2 rounded-xl border bg-white text-sm">👤</button>
     <button onclick="openUsers()" title="Пользователи" class="adm px-3 py-2 rounded-xl border bg-white text-sm">👥</button>
     <button onclick="saveBackup()" class="adm px-3 py-2 rounded-xl border bg-white text-sm">💾 В файл</button>
@@ -181,6 +182,25 @@ body.seller .adm{display:none!important}
     <button class="w-full py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold">Сохранить</button>
   </form>
 </div></dialog>
+<dialog id="ydDlg"><div class="p-5 space-y-3">
+  <div class="flex justify-between items-center"><b>☁ Яндекс Диск</b><button onclick="$('ydDlg').close()" class="text-slate-500 text-xl px-2">✕</button></div>
+  <div id="ydState" class="text-sm"></div>
+  <div id="ydSetup" class="space-y-2">
+    <label class="block text-xs text-slate-500">ID приложения (Client ID) с oauth.yandex.ru
+      <input id="ydCid" autocomplete="off" placeholder="например, 3f9a…" class="w-full mt-1 px-3 py-2 rounded-xl border text-sm font-mono text-slate-900"></label>
+    <button onclick="ydConnect()" class="w-full py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold">Подключить Яндекс Диск</button>
+  </div>
+  <div id="ydActions" class="hidden space-y-2">
+    <label class="flex items-center gap-2 text-sm"><input id="ydAuto" type="checkbox" onchange="ydToggleAuto()"> Автосинхронизация после каждого изменения</label>
+    <div class="grid grid-cols-2 gap-2">
+      <button onclick="ydManualUp()" class="py-2 rounded-xl border text-sm">⬆ Отправить на Диск</button>
+      <button onclick="ydManualDown()" class="py-2 rounded-xl border text-sm">⬇ Загрузить с Диска</button></div>
+    <div class="grid grid-cols-2 gap-2">
+      <button onclick="ydTest()" class="py-2 rounded-xl border text-sm">Проверить связь</button>
+      <button onclick="ydDisconnect()" class="py-2 rounded-xl border text-sm text-rose-600">Отключить</button></div>
+  </div>
+  <p id="ydMsg" class="text-xs text-slate-600 min-h-[2rem] whitespace-pre-line"></p>
+</div></dialog>
 <dialog id="askDlg"><div class="p-5 space-y-4"><p id="askText" class="text-sm"></p>
   <div class="flex justify-end gap-2"><button onclick="$('askDlg').close()" class="px-4 py-2 rounded-xl border text-sm">Отмена</button>
   <button id="askOk" onclick="askYes()" class="px-4 py-2 rounded-xl bg-rose-600 text-white text-sm font-semibold">Удалить</button></div></div></dialog>
@@ -206,7 +226,7 @@ function seed(){
   return {products:[],logs:[],nextId:1};
 }
 function load(){try{const r=localStorage.getItem(KEY);if(r){const d=JSON.parse(r);if(d&&Array.isArray(d.products))return d}}catch(e){}return seed()}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function save(){S.rev=Date.now();try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}if(typeof ydSchedule==='function')ydSchedule()}
 let S=load(), mode='search', sound=true, curTab='stock', flashId=null, receipt=[], cart=[];
 const prod=id=>S.products.find(p=>p.id===id);
 
@@ -538,6 +558,111 @@ function camPhoto(e){
   img.src=url;
 }
 
+/* ---- синхронизация с Яндекс Диском (папка приложения, файл mobisklad.json) ---- */
+const YK='mobisklad.yd',YD='https://cloud-api.yandex.net/v1/disk',YPATH='app:/mobisklad.json';
+let ydOk=false,ydTimer=null,ydStarted=false,ydBusy=false;
+function ydGet(){try{return JSON.parse(localStorage.getItem(YK))||{}}catch(e){return{}}}
+function ydSet(o){try{localStorage.setItem(YK,JSON.stringify(o))}catch(e){}}
+let ydJustConnected=false;
+(function(){
+  const m=location.hash.match(/access_token=([^&]+)/);
+  if(m){const c=ydGet();c.token=decodeURIComponent(m[1]);if(c.auto===undefined)c.auto=true;ydSet(c);ydJustConnected=true;
+    try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}}
+})();
+function ydMsg(t){const el=$('ydMsg');if(el)el.textContent=t||''}
+async function ydApi(path){
+  const r=await fetch(YD+path,{headers:{Authorization:'OAuth '+ydGet().token}});
+  if(r.status===401||r.status===403){const e=new Error('Доступ к Диску не разрешен. Подключите Диск заново');e.status=r.status;throw e}
+  if(!r.ok){const e=new Error('Диск ответил ошибкой '+r.status);e.status=r.status;throw e}
+  return r.json();
+}
+function ydPayload(){return JSON.stringify({app:'mobisklad',v:1,rev:S.rev||Date.now(),products:S.products,logs:S.logs,nextId:S.nextId})}
+async function ydUpload(){
+  const {href}=await ydApi('/resources/upload?path='+encodeURIComponent(YPATH)+'&overwrite=true');
+  let r;
+  try{r=await fetch(href,{method:'PUT',body:new Blob([ydPayload()],{type:'application/json'})})}
+  catch(e){throw new Error('Браузер не смог отправить файл на Диск (сеть или запрет CORS)')}
+  if(!r.ok)throw new Error('Загрузка на Диск: ошибка '+r.status);
+}
+async function ydDownload(){
+  let info;
+  try{info=await ydApi('/resources/download?path='+encodeURIComponent(YPATH))}
+  catch(e){if(e.status===404)return null;throw e}
+  let r;
+  try{r=await fetch(info.href)}catch(e){throw new Error('Браузер не разрешил прочитать файл с Диска (CORS). Загрузка с Диска в этом браузере недоступна')}
+  if(!r.ok)throw new Error('Чтение файла с Диска: ошибка '+r.status);
+  const d=await r.json();
+  if(!d||!Array.isArray(d.products))throw new Error('Файл на Диске имеет неверный формат');
+  return d;
+}
+function ydApply(d){
+  const P=d.products.map(p=>({id:+p.id||0,sku:String(p.sku||''),barcode:String(p.barcode||''),name:String(p.name||''),category:String(p.category||CATS[0]),compat:String(p.compat||''),buy:+p.buy||0,sell:+p.sell||0,stock:+p.stock||0,min:+p.min||0}));
+  S={products:P,logs:Array.isArray(d.logs)?d.logs:[],nextId:Math.max(+d.nextId||0,...P.map(p=>p.id),0)+1,rev:d.rev};
+  receipt=[];cart=[];ydOk=true;commit();toast('Склад загружен с Яндекс Диска','success');
+}
+function ydSchedule(){
+  const c=ydGet();
+  if(!c.token||!c.auto||!ydOk)return;
+  clearTimeout(ydTimer);ydTimer=setTimeout(async()=>{
+    if(!S.products.length)return;
+    try{await ydUpload();ydMsg('Отправлено на Диск: '+new Date().toLocaleTimeString('ru-RU'))}
+    catch(e){toast('Диск: '+e.message,'error');ydMsg('Ошибка отправки: '+e.message)}
+  },4000);
+}
+async function ydStartup(){
+  if(ydStarted)return;ydStarted=true;
+  const c=ydGet();
+  if(ydJustConnected){toast('Яндекс Диск подключен','success')}
+  if(!c.token)return;
+  try{
+    const d=await ydDownload(),empty=!S.products.length;
+    if(!d){if(!empty)await ydUpload();ydOk=true;ydMsg('Файл на Диске создан');return}
+    if(d.products.length&&(empty||d.rev>(S.rev||0))){
+      ydOk=false;
+      ask(`На Яндекс Диске более новые данные (${new Date(d.rev).toLocaleString('ru-RU')}, ${d.products.length} поз.). Загрузить их на это устройство? Текущие данные будут заменены.`,()=>ydApply(d),'Загрузить');
+      ydMsg('Автосинхронизация приостановлена: на Диске другие данные. Выберите «Загрузить с Диска» или «Отправить на Диск».');
+      return;
+    }
+    if(!empty&&(S.rev||0)>d.rev)await ydUpload();
+    ydOk=true;ydMsg('Синхронизировано');
+  }catch(e){toast('Диск: '+e.message,'error');ydMsg('Ошибка: '+e.message)}
+}
+function openYd(){
+  const c=ydGet(),on=!!c.token;
+  $('ydSetup').classList.toggle('hidden',on);$('ydActions').classList.toggle('hidden',!on);
+  $('ydCid').value=c.cid||'';$('ydAuto').checked=!!c.auto;
+  $('ydState').innerHTML=on?'<span class="text-emerald-600 font-semibold">● Подключено</span> · файл «Приложения / ваше приложение / mobisklad.json»':'<span class="text-slate-500">Не подключено</span>';
+  $('ydDlg').showModal();
+}
+function ydConnect(){
+  const cid=$('ydCid').value.trim();
+  if(!/^[0-9a-f]{20,}$/i.test(cid)){ydMsg('Введите ID приложения (длинный набор букв и цифр) с oauth.yandex.ru');return}
+  const c=ydGet();c.cid=cid;ydSet(c);
+  location.href='https://oauth.yandex.ru/authorize?response_type=token&client_id='+encodeURIComponent(cid)+'&redirect_uri='+encodeURIComponent(location.href.split('#')[0]);
+}
+function ydToggleAuto(){const c=ydGet();c.auto=$('ydAuto').checked;ydSet(c);ydMsg(c.auto?'Автосинхронизация включена':'Автосинхронизация выключена')}
+function ydDisconnect(){ask('Отключить Яндекс Диск на этом устройстве? Файл на Диске останется.',()=>{const c=ydGet();ydSet({cid:c.cid});ydOk=false;openYd();ydMsg('Отключено')},'Отключить')}
+async function ydManualUp(){
+  if(ydBusy)return;ydBusy=true;ydMsg('Отправляю…');
+  try{await ydUpload();ydOk=true;ydMsg('Готово: склад отправлен на Диск ('+new Date().toLocaleTimeString('ru-RU')+')');toast('Склад отправлен на Диск','success')}
+  catch(e){ydMsg('Ошибка: '+e.message)}finally{ydBusy=false}
+}
+async function ydManualDown(){
+  if(ydBusy)return;ydBusy=true;ydMsg('Читаю файл с Диска…');
+  try{
+    const d=await ydDownload();
+    if(!d){ydMsg('На Диске пока нет файла склада');return}
+    ask(`Загрузить с Диска ${d.products.length} поз. (${new Date(d.rev).toLocaleString('ru-RU')})? Текущие данные на этом устройстве будут заменены.`,()=>{ydApply(d);$('ydDlg').close()},'Загрузить');
+    ydMsg('');
+  }catch(e){ydMsg('Ошибка: '+e.message)}finally{ydBusy=false}
+}
+async function ydTest(){
+  let out='';const step=(t)=>{out+=t+'\n';ydMsg(out)};
+  try{await ydApi('/');step('1. Доступ к Диску: ок')}catch(e){step('1. Доступ к Диску: '+e.message);return}
+  try{await ydUpload();step('2. Запись файла на Диск: ок')}catch(e){step('2. Запись файла: '+e.message);return}
+  try{const d=await ydDownload();step(d?'3. Чтение файла с Диска: ок ('+d.products.length+' поз.)':'3. Файл на Диске не найден')}catch(e){step('3. Чтение файла: '+e.message)}
+}
+
 /* ---- вход по логину и паролю ---- */
 const UK='mobisklad.users',SK='mobisklad.sess';
 let me=null,lgFails=0;
@@ -568,7 +693,7 @@ function enter(u,how){
   $('whoBtn').textContent='👤 '+u.login+' · выйти';
   $('loginScreen').classList.add('hidden');$('app').classList.remove('hidden');
   $('lgPass').value='';$('lgPass2').value='';
-  renderAll();tab('stock');
+  renderAll();tab('stock');ydStartup();
 }
 function logout(){try{sessionStorage.removeItem(SK);localStorage.removeItem(SK)}catch(e){}showLogin();$('lgUser').value=''}
 async function doLogin(e){
