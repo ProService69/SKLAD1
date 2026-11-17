@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>МобиСклад</title>
 <meta name="theme-color" content="#2563eb">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js" defer></script>
 <script src="https://cdn.tailwindcss.com/3.4.17"></script>
 <style>
@@ -26,6 +27,8 @@ dialog{border:0;border-radius:16px;padding:0;max-width:34rem;width:calc(100% - 2
     <button onclick="saveBackup()" class="px-3 py-2 rounded-xl border bg-white text-sm">💾 В файл</button>
     <label class="relative px-3 py-2 rounded-xl border bg-white text-sm cursor-pointer overflow-hidden">📂 Из файла
       <input type="file" id="bkFile" onchange="loadBackup(event)" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"></label>
+    <label class="relative px-3 py-2 rounded-xl border bg-white text-sm cursor-pointer overflow-hidden">📊 Из Excel
+      <input type="file" id="xlFile" onchange="xlPick(event)" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"></label>
     <button onclick="openForm()" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium">+ Добавить товар</button>
   </div>
 </header>
@@ -141,6 +144,16 @@ dialog{border:0;border-radius:16px;padding:0;max-width:34rem;width:calc(100% - 2
   <div class="space-y-1.5"><div class="text-xs font-medium text-slate-700">Или сфотографируйте штрихкод (или выберите фото из галереи):</div>
   <input type="file" accept="image/*" onchange="camPhoto(event)" class="block w-full text-sm file:mr-3 file:px-3 file:py-2 file:rounded-xl file:border-0 file:bg-blue-600 file:text-white file:font-medium"></div>
   <p id="camDiag" class="text-[11px] text-slate-400"></p>
+</div></dialog>
+<dialog id="xlDlg"><div class="p-5 space-y-3">
+  <h3 class="font-bold text-base">Загрузка из Excel</h3>
+  <p id="xlInfo" class="text-sm"></p>
+  <label class="block text-xs text-slate-500">Остаток товаров, которые уже есть на складе
+    <select id="xlMode" class="w-full mt-1 px-3 py-2 rounded-xl border text-sm text-slate-900"><option value="replace">Заменить значением из файла</option><option value="add">Прибавить к текущему</option><option value="keep">Не менять</option></select></label>
+  <label class="block text-xs text-slate-500">Цены товаров, которые уже есть на складе
+    <select id="xlPrice" class="w-full mt-1 px-3 py-2 rounded-xl border text-sm text-slate-900"><option value="update">Обновить из файла</option><option value="keep">Не менять</option></select></label>
+  <div class="flex justify-end gap-2 pt-2 border-t"><button onclick="$('xlDlg').close()" class="px-4 py-2 rounded-xl border text-sm">Отмена</button>
+  <button onclick="xlApply()" class="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold">Загрузить</button></div>
 </div></dialog>
 <dialog id="askDlg"><div class="p-5 space-y-4"><p id="askText" class="text-sm"></p>
   <div class="flex justify-end gap-2"><button onclick="$('askDlg').close()" class="px-4 py-2 rounded-xl border text-sm">Отмена</button>
@@ -497,6 +510,93 @@ function camPhoto(e){
   };
   img.onerror=()=>{URL.revokeObjectURL(url);$('camStatus').textContent='Не удалось открыть фото'};
   img.src=url;
+}
+
+/* ---- загрузка остатков из Excel (столбцы: Имя, Штрих, Закуп, Продажа, Кол-во) ---- */
+let xlPlan=[];
+function xlSec(t){
+  const s=String(t).toLowerCase();
+  if(/держат/.test(s))return['Держатели','DR'];
+  if(/power|повер|банк/.test(s))return['Power Bank','PB'];
+  if(/науш/.test(s))return['Наушники','HP'];
+  if(/примоч|прочее|разное/.test(s))return['Прочее','PR'];
+  if(/чех/.test(s))return['Чехлы','CS'];
+  if(/стекл|пленк/.test(s))return['Защитные стекла','GL'];
+  if(/aux/.test(s))return['Кабели и зарядки','AUX'];
+  if(/(^|\s)тв(\s|$)/.test(s))return['Кабели и зарядки','TV'];
+  if(/сзу|сетев/.test(s))return['Кабели и зарядки','SZU'];
+  if(/азу|авто/.test(s))return['Кабели и зарядки','AZU'];
+  return['Кабели и зарядки','KB'];
+}
+function xlFix(n){
+  n=String(n).trim();
+  [['Tupe','Type'],['Lighting','Lightning'],['Borafone','Borofone'],['Brofone','Borofone'],['Smsung','Samsung'],['Беcпроводная ЗУ','Беспроводное ЗУ'],['\\',' / ']].forEach(x=>{n=n.split(x[0]).join(x[1])});
+  return n.replace(/\s+/g,' ');
+}
+function ean13(d){let s=0;for(let i=0;i<12;i++)s+=(+d[i])*(i%2?3:1);return d+((10-s%10)%10)}
+function xlParse(rows){
+  const isNum=v=>typeof v==='number'&&isFinite(v);
+  let sec=xlSec(rows[0]&&rows[0][0]!=null?rows[0][0]:''),out=[];
+  rows.forEach((r,i)=>{
+    const name=r[0]==null?'':String(r[0]).trim();
+    if(!name)return;
+    if(!isNum(r[2])&&!isNum(r[3])&&!isNum(r[4])){ if(r[1]==null||/штрих/i.test(String(r[1])))sec=xlSec(name); return }
+    if(!isNum(r[2])||!isNum(r[3]))return;
+    const bc=r[1]==null?'':(typeof r[1]==='number'?String(Math.round(r[1])):String(r[1]).trim());
+    out.push({name:xlFix(name),bc,buy:Math.round(r[2]),sell:Math.round(r[3]),qty:Math.max(0,Math.round(+r[4]||0)),cat:sec[0],pre:sec[1]});
+  });
+  return out;
+}
+function xlBuild(list){
+  const byBc=new Map(S.products.map(p=>[p.barcode,p])),byName=new Map();S.products.forEach(p=>{const k=p.name.toLowerCase();if(!byName.has(k))byName.set(k,[]);byName.get(k).push(p)});
+  const usedBc=new Set(S.products.map(p=>p.barcode)),usedSku=new Set(S.products.map(p=>p.sku.toLowerCase()));
+  const seen=new Set(),usedEx=new Set();let gn=0;
+  return list.map(it=>{
+    let ex=null;
+    if(it.bc&&!seen.has(it.bc)&&byBc.has(it.bc)&&!usedEx.has(byBc.get(it.bc)))ex=byBc.get(it.bc);
+    if(!ex){const q=(byName.get(it.name.toLowerCase())||[]).find(x=>!usedEx.has(x));if(q)ex=q}
+    if(it.bc)seen.add(it.bc);
+    if(ex){usedEx.add(ex);return{ex,...it}}
+    let bc=it.bc;
+    if(!bc||usedBc.has(bc)){do{bc=ean13('200000'+String(++gn).padStart(6,'0'))}while(usedBc.has(bc));it.gen=true}
+    usedBc.add(bc);
+    let n=1,sku;do{sku=it.pre+'-'+String(n++).padStart(2,'0')}while(usedSku.has(sku.toLowerCase()));
+    usedSku.add(sku.toLowerCase());
+    return{ex:null,...it,bc,sku};
+  });
+}
+function xlPick(e){
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  if(!window.XLSX){toast('Библиотека Excel не загрузилась. Проверьте интернет и обновите страницу','error');return}
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(r.result),{type:'array'});
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:null,raw:true});
+      xlPlan=xlBuild(xlParse(rows));
+      if(!xlPlan.length){toast('Товары не найдены. Нужны столбцы: Имя, Штрих, Закуп, Продажа, Кол-во','error');return}
+      const nNew=xlPlan.filter(x=>!x.ex).length,nGen=xlPlan.filter(x=>!x.ex&&x.gen).length,units=xlPlan.reduce((a,x)=>a+x.qty,0);
+      $('xlInfo').innerHTML=`Файл «${esc(f.name)}»: <b>${xlPlan.length}</b> позиций, ${units} шт.<br>Новых: <b>${nNew}</b>, уже есть на складе: <b>${xlPlan.length-nNew}</b>.`+(nGen?`<br><span class="text-xs text-slate-500">${nGen} новых без штрихкода получат внутренний код.</span>`:'');
+      $('xlDlg').showModal();
+    }catch(err){toast('Не удалось прочитать Excel: '+((err&&err.message)||err),'error')}
+  };
+  r.onerror=()=>toast('Не удалось открыть файл','error');
+  r.readAsArrayBuffer(f);
+}
+function xlApply(){
+  const mode=$('xlMode').value,pr=$('xlPrice').value;let nn=0,nu=0;
+  xlPlan.forEach(it=>{
+    if(it.ex){
+      const p=it.ex;
+      if(mode==='replace')p.stock=it.qty;else if(mode==='add')p.stock+=it.qty;
+      if(pr==='update'){p.buy=it.buy;p.sell=it.sell}
+      nu++;
+    }else{
+      S.products.push({id:S.nextId++,sku:it.sku,barcode:it.bc,name:it.name,category:it.cat,compat:'Универсальный',buy:it.buy,sell:it.sell,stock:it.qty,min:1});nn++;
+    }
+  });
+  log('in',`Загрузка из Excel: новых ${nn}, обновлено ${nu}`);xlPlan=[];
+  $('xlDlg').close();commit();toast(`Из Excel: новых ${nn}, обновлено ${nu}`,'success');
 }
 
 /* ---- разовый импорт позиций из Excel (Аксы_Кабеля_СЗУ.xlsx) ---- */
