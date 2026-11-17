@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>МобиСклад</title>
+<meta name="theme-color" content="#2563eb">
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js" defer></script>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<style>
+:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{background:#f1f5f9;color:#1e293b;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+@keyframes fl{0%{background:#dbeafe}100%{background:transparent}}.flash{animation:fl 1.3s ease-out}
+dialog{border:0;border-radius:16px;padding:0;max-width:34rem;width:calc(100% - 2rem)}dialog::backdrop{background:rgba(15,23,42,.55)}
+</style>
+</head>
+<body>
+<div class="max-w-6xl mx-auto p-3 sm:p-5 space-y-4">
+
+<header class="flex flex-wrap items-center justify-between gap-2">
+  <div><h1 class="text-xl font-bold">📱 МобиСклад</h1><p class="text-xs text-slate-500">Учет мобильных аксессуаров · данные сохраняются в браузере</p></div>
+  <div class="flex gap-2">
+    <button onclick="toggleSound()" id="sndBtn" class="px-3 py-2 rounded-xl border bg-white text-sm">🔊</button>
+    <button onclick="saveBackup()" class="px-3 py-2 rounded-xl border bg-white text-sm">💾 В файл</button>
+    <label class="relative px-3 py-2 rounded-xl border bg-white text-sm cursor-pointer overflow-hidden">📂 Из файла
+      <input type="file" id="bkFile" onchange="loadBackup(event)" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"></label>
+    <button onclick="openForm()" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium">+ Добавить товар</button>
+  </div>
+</header>
+
+<section class="bg-white rounded-2xl border p-4 space-y-2">
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <span class="text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-lg">СКАНЕР ШК · F2 — фокус</span>
+    <div class="inline-flex rounded-xl bg-slate-100 p-1 text-xs" id="modes">
+      <button onclick="setMode('search')" data-m="search" class="px-3 py-1.5 rounded-lg">🔍 Проверка</button>
+      <button onclick="setMode('in')" data-m="in" class="px-3 py-1.5 rounded-lg">📥 Приход +1</button>
+      <button onclick="setMode('out')" data-m="out" class="px-3 py-1.5 rounded-lg">📤 Расход −1</button>
+    </div>
+  </div>
+  <form onsubmit="scanSubmit(event)" class="flex gap-2">
+    <input id="scan" autocomplete="off" placeholder="Штрихкод или артикул, затем Enter…" class="mono flex-1 px-3 py-2.5 rounded-xl border-2 border-blue-400 bg-slate-50 focus:bg-white outline-none">
+    <button type="button" onclick="openCam()" title="Сканировать камерой" class="px-3 rounded-xl border-2 border-blue-400 bg-white text-lg">📷</button>
+    <button class="px-4 rounded-xl bg-blue-600 text-white text-sm font-semibold">Ввод</button>
+  </form>
+  <div class="flex flex-wrap gap-1.5 text-[11px]" id="quick"></div>
+</section>
+
+<nav class="flex gap-1.5 overflow-x-auto text-sm" id="tabs">
+  <button data-t="stock" onclick="tab('stock')" class="px-4 py-2 rounded-xl">Склад</button>
+  <button data-t="receipt" onclick="tab('receipt')" class="px-4 py-2 rounded-xl">Приемка</button>
+  <button data-t="pos" onclick="tab('pos')" class="px-4 py-2 rounded-xl">Касса <span id="cartBadge" class="hidden ml-1 bg-emerald-500 text-white text-xs rounded-full px-1.5"></span></button>
+  <button data-t="log" onclick="tab('log')" class="px-4 py-2 rounded-xl">Журнал и отчеты</button>
+</nav>
+
+<!-- СКЛАД -->
+<div id="v-stock" class="space-y-4">
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3" id="kpis"></div>
+  <div class="bg-white rounded-2xl border overflow-hidden">
+    <div class="p-3 flex flex-wrap gap-2 border-b">
+      <input id="q" oninput="renderStock()" placeholder="Поиск: название, модель, артикул…" class="flex-1 min-w-[200px] px-3 py-2 rounded-xl border bg-slate-50 text-sm outline-none">
+      <select id="cat" onchange="renderStock()" class="px-3 py-2 rounded-xl border bg-slate-50 text-sm"></select>
+      <select id="st" onchange="renderStock()" class="px-3 py-2 rounded-xl border bg-slate-50 text-sm">
+        <option value="all">Все остатки</option><option value="low">Мало</option><option value="out">Нет в наличии</option>
+      </select>
+      <button onclick="exportCSV()" class="px-3 py-2 rounded-xl border text-sm">⬇ CSV</button>
+    </div>
+    <div class="overflow-x-auto"><table class="w-full text-sm text-left">
+      <thead class="bg-slate-50 text-[11px] uppercase text-slate-500"><tr>
+        <th class="p-3">Артикул / ШК</th><th class="p-3">Товар</th><th class="p-3">Совместимость</th><th class="p-3 text-right">Закупка</th><th class="p-3 text-right">Розница</th><th class="p-3 text-center">Остаток</th><th class="p-3 text-right">Действия</th></tr></thead>
+      <tbody id="tbody" class="divide-y"></tbody></table></div>
+    <div id="sum" class="px-4 py-2 text-xs text-slate-500 bg-slate-50 border-t"></div>
+  </div>
+</div>
+
+<!-- ПРИЕМКА -->
+<div id="v-receipt" class="hidden grid lg:grid-cols-3 gap-4">
+  <div class="lg:col-span-2 bg-white rounded-2xl border p-4 space-y-3">
+    <h2 class="font-bold">Приходная накладная</h2>
+    <input id="supplier" placeholder="Поставщик" class="w-full px-3 py-2 rounded-xl border bg-slate-50 text-sm">
+    <div class="flex gap-2"><select id="rSel" class="flex-1 min-w-0 px-3 py-2 rounded-xl border bg-slate-50 text-sm"></select>
+      <input id="rQty" type="number" min="1" value="5" class="w-20 px-2 py-2 rounded-xl border bg-slate-50 text-center text-sm">
+      <button onclick="rAdd()" class="px-3 rounded-xl bg-blue-600 text-white text-sm">+</button></div>
+    <div id="rList" class="divide-y border rounded-xl text-sm"></div>
+  </div>
+  <div class="bg-white rounded-2xl border p-4 space-y-3 h-fit">
+    <h3 class="font-bold">Итого</h3><div id="rTot" class="text-sm space-y-1"></div>
+    <button onclick="rCommit()" class="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">✓ Провести приемку</button>
+  </div>
+</div>
+
+<!-- КАССА -->
+<div id="v-pos" class="hidden grid lg:grid-cols-3 gap-4">
+  <div class="lg:col-span-2 bg-white rounded-2xl border p-4"><h2 class="font-bold mb-3">Быстрый подбор в чек</h2><div id="posGrid" class="grid sm:grid-cols-2 md:grid-cols-3 gap-2"></div></div>
+  <div class="bg-white rounded-2xl border p-4 space-y-3 h-fit">
+    <div class="flex justify-between"><h3 class="font-bold">Текущий чек</h3><button onclick="cart=[];renderPos()" class="text-xs text-rose-600">Очистить</button></div>
+    <div id="cartList" class="space-y-2 max-h-80 overflow-y-auto"></div>
+    <div class="flex justify-between items-baseline border-t pt-3"><span class="text-sm text-slate-600">К оплате</span><span id="cartTot" class="text-2xl font-bold"></span></div>
+    <div class="grid grid-cols-2 gap-2">
+      <button onclick="checkout('Карта / СБП')" class="py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold">💳 Карта / СБП</button>
+      <button onclick="checkout('Наличные')" class="py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold">💵 Наличные</button></div>
+  </div>
+</div>
+
+<!-- ЖУРНАЛ -->
+<div id="v-log" class="hidden grid lg:grid-cols-2 gap-4">
+  <div class="bg-white rounded-2xl border p-4 space-y-3"><h2 class="font-bold">Остатки по категориям</h2><div id="bars" class="space-y-3"></div>
+    <button onclick="resetData()" class="text-xs text-rose-600 underline">Сбросить все данные к демо-набору</button></div>
+  <div class="bg-white rounded-2xl border p-4 space-y-2"><div class="flex justify-between"><h2 class="font-bold">Журнал операций</h2><button onclick="S.logs=[];save();renderLog()" class="text-xs text-slate-500">Очистить</button></div>
+    <div id="logList" class="space-y-1.5 max-h-96 overflow-y-auto text-xs"></div></div>
+</div>
+</div>
+
+<dialog id="dlg"><form onsubmit="saveForm(event)" class="p-5 space-y-3">
+  <h3 id="dTitle" class="font-bold text-base">Товар</h3><input type="hidden" id="fId">
+  <input id="fName" required placeholder="Наименование *" class="w-full px-3 py-2 rounded-xl border text-sm">
+  <div class="grid grid-cols-2 gap-2">
+    <select id="fCat" class="px-3 py-2 rounded-xl border text-sm"></select>
+    <input id="fCompat" placeholder="Совместимость" class="px-3 py-2 rounded-xl border text-sm"></div>
+  <div class="grid grid-cols-2 gap-2">
+    <input id="fSku" required placeholder="Артикул *" class="mono px-3 py-2 rounded-xl border text-sm">
+    <div class="flex gap-1"><input id="fBc" required placeholder="Штрихкод *" class="mono w-full px-3 py-2 rounded-xl border text-sm"><button type="button" onclick="genBc()" class="px-2 rounded-xl bg-slate-100 text-xs">Ген.</button></div></div>
+  <div class="grid grid-cols-4 gap-2 text-[11px] text-slate-500">
+    <label>Закупка ₽<input id="fBuy" type="number" min="0" required class="w-full px-2 py-2 rounded-xl border text-sm text-slate-900"></label>
+    <label>Розница ₽<input id="fSell" type="number" min="0" required class="w-full px-2 py-2 rounded-xl border text-sm text-slate-900"></label>
+    <label>Остаток<input id="fStock" type="number" min="0" required class="w-full px-2 py-2 rounded-xl border text-sm text-slate-900"></label>
+    <label>Мин.<input id="fMin" type="number" min="0" required class="w-full px-2 py-2 rounded-xl border text-sm text-slate-900"></label></div>
+  <div class="flex justify-end gap-2 pt-2 border-t">
+    <button type="button" onclick="dlg.close()" class="px-4 py-2 rounded-xl border text-sm">Отмена</button>
+    <button class="px-5 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold">Сохранить</button></div>
+</form></dialog>
+
+<dialog id="info"><div id="infoBody" class="p-5 space-y-3"></div></dialog>
+<dialog id="camDlg"><div class="p-4 space-y-3">
+  <div class="flex justify-between items-center"><b>Сканирование камерой</b><button onclick="$('camDlg').close()" class="text-slate-500 text-xl px-2">✕</button></div>
+  <div class="relative bg-black rounded-xl overflow-hidden aspect-[4/3]">
+    <video id="camVideo" playsinline muted class="w-full h-full object-cover"></video>
+    <div class="absolute inset-x-6 top-1/3 bottom-1/3 border-2 border-emerald-400/80 rounded-lg pointer-events-none"></div></div>
+  <p id="camStatus" class="text-xs text-slate-600 min-h-[2.5rem]"></p>
+  <div class="space-y-1.5"><div class="text-xs font-medium text-slate-700">Или сфотографируйте штрихкод (или выберите фото из галереи):</div>
+  <input type="file" accept="image/*" onchange="camPhoto(event)" class="block w-full text-sm file:mr-3 file:px-3 file:py-2 file:rounded-xl file:border-0 file:bg-blue-600 file:text-white file:font-medium"></div>
+  <p id="camDiag" class="text-[11px] text-slate-400"></p>
+</div></dialog>
+<dialog id="askDlg"><div class="p-5 space-y-4"><p id="askText" class="text-sm"></p>
+  <div class="flex justify-end gap-2"><button onclick="$('askDlg').close()" class="px-4 py-2 rounded-xl border text-sm">Отмена</button>
+  <button id="askOk" onclick="askYes()" class="px-4 py-2 rounded-xl bg-rose-600 text-white text-sm font-semibold">Удалить</button></div></div></dialog>
+<div id="toasts" class="fixed bottom-4 right-4 left-4 sm:left-auto sm:w-80 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+<script>
+const KEY='mobisklad.v1', CATS=['Чехлы','Защитные стекла','Кабели и зарядки','Наушники','Держатели','Power Bank','Прочее'];
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const rub=n=>new Intl.NumberFormat('ru-RU').format(n)+' ₽';
+
+function seed(){
+  const P=[
+    ['CS-IP15P-01','4607182940112','Силиконовый чехол MagSafe (тёмно-синий)','Чехлы','iPhone 15 Pro',320,990,18,5],
+    ['GL-SAM24U-02','4607182940259','Защитное стекло 3D Full Glue','Защитные стекла','Samsung S24 Ultra',140,590,3,6],
+    ['CH-APL20W-03','4607182940389','Сетевое ЗУ Apple 20W USB-C','Кабели и зарядки','iPhone / iPad',850,1890,12,4],
+    ['CB-BAS-CL1','4607182940419','Кабель Baseus Type-C — Lightning 1м','Кабели и зарядки','iPhone 8–14',210,650,27,8],
+    ['GL-IP1314-05','4607182940525','Защитное стекло антишпион 9H','Защитные стекла','iPhone 13 / 14',160,690,0,5],
+    ['AU-TWS-P2','4607182940631','Наушники TWS Hoco EW42','Наушники','Bluetooth 5.3',790,1690,7,3],
+    ['HL-MAG-C1','4607182940747','Автодержатель магнитный MagSafe','Держатели','iPhone 12–16',390,1190,4,5],
+    ['CS-RED13C-08','4607182940853','Противоударный чехол Armor Clear','Чехлы','Redmi Note 13',150,490,15,5]
+  ].map((a,i)=>({id:i+1,sku:a[0],barcode:a[1],name:a[2],category:a[3],compat:a[4],buy:a[5],sell:a[6],stock:a[7],min:a[8]}));
+  return {products:[],logs:[],nextId:1};
+}
+function load(){try{const r=localStorage.getItem(KEY);if(r){const d=JSON.parse(r);if(d&&Array.isArray(d.products))return d}}catch(e){}return seed()}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+let S=load(), mode='search', sound=true, curTab='stock', flashId=null, receipt=[], cart=[];
+const prod=id=>S.products.find(p=>p.id===id);
+
+/* ---- служебное ---- */
+function toast(m,t='info'){
+  const c={success:'border-emerald-500',warning:'border-amber-500',error:'border-rose-500',info:'border-blue-500'}[t];
+  const d=document.createElement('div');d.className=`pointer-events-auto bg-slate-900 text-white text-xs px-4 py-3 rounded-xl border-l-4 ${c} shadow-lg`;d.textContent=m;
+  $('toasts').appendChild(d);setTimeout(()=>d.remove(),3200);
+}
+function beep(ok=true){
+  if(!sound)return;
+  try{const c=new (window.AudioContext||window.webkitAudioContext)(),o=c.createOscillator(),g=c.createGain();
+    o.connect(g);g.connect(c.destination);o.type=ok?'sine':'sawtooth';o.frequency.value=ok?1046:220;
+    g.gain.setValueAtTime(.12,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+(ok?.12:.25));o.start();o.stop(c.currentTime+(ok?.13:.26));}catch(e){}
+}
+function toggleSound(){sound=!sound;$('sndBtn').textContent=sound?'🔊':'🔇';toast(sound?'Звук включен':'Звук выключен')}
+function log(type,text){S.logs.unshift({t:new Date().toTimeString().slice(0,5),d:new Date().toLocaleDateString('ru-RU'),type,text});S.logs=S.logs.slice(0,100);}
+function commit(){save();renderAll()}
+
+/* ---- сканер ---- */
+function setMode(m){
+  mode=m;
+  document.querySelectorAll('#modes button').forEach(b=>{
+    const on=b.dataset.m===m, col={search:'bg-white text-slate-900',in:'bg-emerald-600 text-white',out:'bg-amber-600 text-white'}[m];
+    b.className='px-3 py-1.5 rounded-lg '+(on?col+' font-semibold shadow-sm':'text-slate-600');
+  });$('scan').focus();
+}
+function scanSubmit(e){e.preventDefault();const v=$('scan').value.trim();if(v){scan(v);$('scan').value=''}}
+function scan(code){
+  const q=code.toLowerCase(), p=S.products.find(x=>x.barcode.toLowerCase()===q||x.sku.toLowerCase()===q);
+  if(!p){beep(false);toast(`Код «${code}» не найден в базе`,'error');log('error',`Неизвестный код: ${code}`);save();renderLog();return}
+  beep(true);flashId=p.id;
+  if(mode==='search'){log('search',`Проверка: ${p.name} — ${p.stock} шт.`);openInfo(p)}
+  else if(mode==='in'){p.stock++;log('in',`Сканер, приход +1: ${p.name} → ${p.stock} шт.`);toast(`+1: ${p.name} (${p.stock} шт.)`,'success')}
+  else{
+    if(p.stock<1){beep(false);toast(`«${p.name}» нет на складе`,'error');return}
+    p.stock--;log('out',`Сканер, расход −1: ${p.name} → ${p.stock} шт.`);toast(`−1: ${p.name} (${p.stock} шт.)`,'warning');
+  }
+  commit();
+}
+function openInfo(p){
+  const st=p.stock===0?'<b class="text-rose-600">Нет в наличии</b>':p.stock<=p.min?`<b class="text-amber-600">${p.stock} шт. (мало)</b>`:`<b class="text-emerald-600">${p.stock} шт.</b>`;
+  $('infoBody').innerHTML=`<div class="mono text-xs text-slate-400">ШК ${esc(p.barcode)} · ${esc(p.sku)}</div>
+  <h4 class="font-bold">${esc(p.name)}</h4><div class="text-xs text-slate-500">${esc(p.compat)}</div>
+  <div class="grid grid-cols-2 gap-3 p-3 rounded-xl bg-slate-50 border text-sm"><div><div class="text-[11px] text-slate-500">Цена</div><b class="text-lg">${rub(p.sell)}</b></div><div><div class="text-[11px] text-slate-500">Остаток</div>${st}</div></div>
+  <div class="flex gap-2"><button onclick="adj(${p.id},1);info.close()" class="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-semibold">+ Приход 1</button>
+  <button ${p.stock?'':'disabled'} onclick="adj(${p.id},-1);info.close()" class="flex-1 py-2.5 rounded-xl bg-amber-600 disabled:opacity-40 text-white text-xs font-semibold">− Расход 1</button>
+  <button onclick="info.close()" class="px-4 rounded-xl border text-xs">Закрыть</button></div>`;
+  info.showModal();
+}
+
+/* ---- склад ---- */
+function adj(id,d){
+  const p=prod(id);if(!p)return;
+  if(p.stock+d<0){toast('Остаток не может быть меньше 0','error');return}
+  p.stock+=d;flashId=id;log(d>0?'in':'out',`Вручную ${d>0?'+':''}${d}: ${p.name} → ${p.stock} шт.`);commit();
+}
+let askCb=null;
+function ask(text,cb,btn='Удалить'){askCb=cb;$('askText').textContent=text;$('askOk').textContent=btn;$('askDlg').showModal()}
+function askYes(){$('askDlg').close();const f=askCb;askCb=null;if(f)f()}
+function delProd(id){
+  const p=prod(id);if(!p)return;
+  ask(`Удалить «${p.name}» из справочника?`,()=>{
+    S.products=S.products.filter(x=>x.id!==id);receipt=receipt.filter(r=>r.id!==id);cart=cart.filter(r=>r.id!==id);
+    log('out',`Удалена карточка: ${p.name}`);commit();toast('Позиция удалена','success');
+  });
+}
+function renderKpis(){
+  const P=S.products,units=P.reduce((a,p)=>a+p.stock,0),low=P.filter(p=>p.stock<=p.min),out=P.filter(p=>!p.stock).length;
+  const retail=P.reduce((a,p)=>a+p.stock*p.sell,0),cost=P.reduce((a,p)=>a+p.stock*p.buy,0);
+  const k=(l,v,s,c='')=>`<div class="bg-white rounded-2xl border p-4"><div class="text-[11px] uppercase text-slate-500">${l}</div><div class="text-2xl font-bold ${c}">${v}</div><div class="text-xs text-slate-500">${s}</div></div>`;
+  $('kpis').innerHTML=k('Позиций',P.length,'наименований')+k('Остаток',units+' шт.','на складе')+
+    `<button onclick="$('st').value='low';renderStock()" class="text-left bg-white rounded-2xl border p-4 hover:bg-amber-50"><div class="text-[11px] uppercase text-slate-500">Критический остаток</div><div class="text-2xl font-bold text-amber-600">${low.length} поз.</div><div class="text-xs text-rose-600">из них ${out} нет в наличии</div></button>`+
+    k('Стоимость (розн.)',rub(retail),'закупочная '+rub(cost));
+}
+function renderStock(){
+  const q=$('q').value.trim().toLowerCase(),c=$('cat').value,s=$('st').value;
+  const L=S.products.filter(p=>(c==='all'||p.category===c)&&
+    (!q||[p.name,p.compat,p.sku,p.barcode].some(x=>x.toLowerCase().includes(q)))&&
+    (s==='all'||(s==='low'&&p.stock<=p.min)||(s==='out'&&p.stock===0)));
+  $('tbody').innerHTML=L.length?L.map(p=>{
+    const b=p.stock===0?['bg-rose-50 text-rose-700 border-rose-200',`0 шт. (нет)`]:p.stock<=p.min?['bg-amber-50 text-amber-700 border-amber-200',`${p.stock} шт. (мало)`]:['bg-emerald-50 text-emerald-700 border-emerald-200',`${p.stock} шт.`];
+    return `<tr class="hover:bg-slate-50 ${p.id===flashId?'flash':''}">
+    <td class="p-3 whitespace-nowrap"><div class="mono text-xs font-semibold">${esc(p.sku)}</div><div class="mono text-[11px] text-slate-400">${esc(p.barcode)}</div></td>
+    <td class="p-3"><div class="font-medium">${esc(p.name)}</div><div class="text-[11px] text-slate-400">${esc(p.category)} · мин. ${p.min}</div></td>
+    <td class="p-3 text-xs text-slate-600">${esc(p.compat)}</td>
+    <td class="p-3 text-right text-slate-500 whitespace-nowrap">${rub(p.buy)}</td>
+    <td class="p-3 text-right font-semibold whitespace-nowrap">${rub(p.sell)}</td>
+    <td class="p-3 text-center whitespace-nowrap"><span class="px-2.5 py-1 rounded-full text-xs font-semibold border ${b[0]}">${b[1]}</span></td>
+    <td class="p-3 text-right whitespace-nowrap"><button onclick="adj(${p.id},-1)" class="w-8 h-8 rounded-lg border hover:bg-rose-50">−</button>
+      <button onclick="adj(${p.id},1)" class="w-8 h-8 rounded-lg border hover:bg-emerald-50">+</button>
+      <button onclick="openForm(${p.id})" class="w-8 h-8 rounded-lg border hover:bg-blue-50">✎</button>
+      <button onclick="delProd(${p.id})" class="w-8 h-8 rounded-lg border hover:bg-rose-50 text-rose-500">🗑</button></td></tr>`}).join('')
+    :`<tr><td colspan="7" class="p-10 text-center text-slate-500">Товары не найдены</td></tr>`;
+  $('sum').textContent=`Показано ${L.length} из ${S.products.length} позиций`;flashId=null;
+}
+function exportCSV(){
+  const h=['Артикул','Штрихкод','Наименование','Категория','Совместимость','Закупка','Розница','Остаток'];
+  const r=S.products.map(p=>[p.sku,p.barcode,`"${p.name.replace(/"/g,'""')}"`,p.category,`"${p.compat.replace(/"/g,'""')}"`,p.buy,p.sell,p.stock]);
+  const blob=new Blob(['\uFEFF'+[h.join(';'),...r.map(x=>x.join(';'))].join('\n')],{type:'text/csv;charset=utf-8'});
+  saveFile('ostatki_'+new Date().toISOString().slice(0,10)+'.csv',blob,'CSV сохранен');
+}
+
+/* ---- карточка товара ---- */
+function genBc(){$('fBc').value='4607182'+Math.floor(100000+Math.random()*899999)}
+function openForm(id){
+  const p=id?prod(id):null;
+  $('dTitle').textContent=p?'Редактировать товар':'Добавить товар';$('fId').value=p?p.id:'';
+  $('fName').value=p?p.name:'';$('fCat').value=p?p.category:CATS[0];$('fCompat').value=p?p.compat:'';
+  $('fSku').value=p?p.sku:'ACC-'+Math.floor(1000+Math.random()*9000);
+  if(p)$('fBc').value=p.barcode;else genBc();
+  $('fBuy').value=p?p.buy:250;$('fSell').value=p?p.sell:790;$('fStock').value=p?p.stock:10;$('fMin').value=p?p.min:5;
+  dlg.showModal();
+}
+function saveForm(e){
+  e.preventDefault();
+  const id=Number($('fId').value),sku=$('fSku').value.trim(),bc=$('fBc').value.trim();
+  if(S.products.some(p=>p.id!==id&&(p.barcode===bc||p.sku.toLowerCase()===sku.toLowerCase()))){toast('Артикул или штрихкод уже есть в базе','error');return}
+  const d={name:$('fName').value.trim(),category:$('fCat').value,compat:$('fCompat').value.trim()||'Универсальный',sku,barcode:bc,
+    buy:+$('fBuy').value||0,sell:+$('fSell').value||0,stock:+$('fStock').value||0,min:+$('fMin').value||0};
+  if(id){Object.assign(prod(id),d);flashId=id;toast('Карточка обновлена','success')}
+  else{const n=S.nextId++;S.products.unshift({id:n,...d});flashId=n;log('in',`Новая карточка: ${d.name} (${d.stock} шт.)`);toast('Товар добавлен','success')}
+  dlg.close();commit();
+}
+
+/* ---- приемка ---- */
+function rAdd(){
+  const id=+$('rSel').value,q=Math.max(1,+$('rQty').value||1);if(!id)return;
+  const x=receipt.find(r=>r.id===id);x?x.qty+=q:receipt.push({id,qty:q});renderReceipt();
+}
+function renderReceipt(){
+  const cur=$('rSel').value;
+  $('rSel').innerHTML=S.products.map(p=>`<option value="${p.id}">${esc(p.name)} (${esc(p.sku)}) — ост. ${p.stock}</option>`).join('');
+  if(cur)$('rSel').value=cur;
+  let u=0,s=0;
+  $('rList').innerHTML=receipt.length?receipt.map((r,i)=>{const p=prod(r.id);if(!p)return'';u+=r.qty;s+=r.qty*p.buy;
+    return `<div class="p-2.5 flex items-center justify-between gap-2"><div class="min-w-0"><div class="font-medium truncate">${esc(p.name)}</div><div class="text-[11px] text-slate-500">${rub(p.buy)} × ${r.qty}</div></div>
+    <div class="flex items-center gap-2"><b>${rub(p.buy*r.qty)}</b><button onclick="receipt.splice(${i},1);renderReceipt()" class="text-rose-500">✕</button></div></div>`}).join('')
+    :'<div class="p-5 text-center text-xs text-slate-400">Накладная пуста</div>';
+  $('rTot').innerHTML=`<div class="flex justify-between"><span>Позиций</span><b>${receipt.length}</b></div><div class="flex justify-between"><span>Единиц</span><b>${u} шт.</b></div><div class="flex justify-between text-base pt-2 border-t"><span>Сумма закупки</span><b>${rub(s)}</b></div>`;
+}
+function rCommit(){
+  if(!receipt.length){toast('Добавьте товары в накладную','error');return}
+  let n=0;receipt.forEach(r=>{const p=prod(r.id);if(p){p.stock+=r.qty;n+=r.qty}});
+  log('in',`Приемка (${$('supplier').value.trim()||'без поставщика'}): оприходовано ${n} ед.`);
+  toast(`Приемка проведена: +${n} ед.`,'success');receipt=[];commit();tab('stock');
+}
+
+/* ---- касса ---- */
+function addCart(id){
+  const p=prod(id);if(!p||!p.stock)return;
+  const x=cart.find(c=>c.id===id);
+  if(x){if(x.qty>=p.stock){toast(`Доступно только ${p.stock} шт.`,'warning');return}x.qty++}else cart.push({id,qty:1});
+  renderPos();
+}
+function renderPos(){
+  $('posGrid').innerHTML=S.products.map(p=>`<button ${p.stock?'':'disabled'} onclick="addCart(${p.id})" class="text-left p-3 rounded-xl border ${p.stock?'hover:border-blue-400 hover:bg-blue-50/50':'opacity-50'}">
+    <div class="flex justify-between text-[11px]"><span class="text-slate-400">${esc(p.category)}</span><b class="${p.stock?'text-emerald-600':'text-rose-600'}">ост. ${p.stock}</b></div>
+    <div class="text-xs font-semibold my-1">${esc(p.name)}</div><div class="text-sm font-bold text-blue-600">${rub(p.sell)}</div></button>`).join('');
+  cart=cart.filter(c=>prod(c.id));let t=0,q=0;
+  $('cartList').innerHTML=cart.length?cart.map((c,i)=>{const p=prod(c.id);t+=p.sell*c.qty;q+=c.qty;
+    return `<div class="p-2 rounded-xl bg-slate-50 border flex items-center justify-between gap-2"><div class="min-w-0"><div class="text-xs font-semibold truncate">${esc(p.name)}</div><div class="text-[11px] text-slate-500">${rub(p.sell)} × ${c.qty}</div></div>
+    <div class="flex items-center gap-1"><button onclick="cartQty(${i},-1)" class="w-6 h-6 rounded border bg-white">−</button><button onclick="cartQty(${i},1)" class="w-6 h-6 rounded border bg-white">+</button></div></div>`}).join('')
+    :'<div class="py-6 text-center text-xs text-slate-400">Чек пуст</div>';
+  $('cartTot').textContent=rub(t);const b=$('cartBadge');b.textContent=q;b.classList.toggle('hidden',!q);
+}
+function cartQty(i,d){
+  const c=cart[i],p=prod(c.id);c.qty+=d;
+  if(c.qty<=0)cart.splice(i,1);else if(c.qty>p.stock){c.qty=p.stock;toast(`Доступно только ${p.stock} шт.`,'warning')}
+  renderPos();
+}
+function checkout(m){
+  if(!cart.length){toast('Чек пуст','error');return}
+  let s=0;cart.forEach(c=>{const p=prod(c.id);p.stock=Math.max(0,p.stock-c.qty);s+=p.sell*c.qty});
+  beep(true);log('out',`Продажа (${m}): чек на ${rub(s)}`);toast(`Чек пробит (${m}): ${rub(s)}`,'success');cart=[];commit();
+}
+
+/* ---- журнал ---- */
+function renderLog(){
+  const tot=Math.max(1,S.products.reduce((a,p)=>a+p.stock,0));
+  $('bars').innerHTML=CATS.map(c=>{const it=S.products.filter(p=>p.category===c),u=it.reduce((a,p)=>a+p.stock,0),v=it.reduce((a,p)=>a+p.stock*p.sell,0);
+    return `<div><div class="flex justify-between text-xs mb-1"><b>${c} (${it.length})</b><span>${u} шт. · <b>${rub(v)}</b></span></div><div class="h-2.5 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-blue-600" style="width:${Math.round(u/tot*100)}%"></div></div></div>`}).join('');
+  const col={in:'bg-emerald-100 text-emerald-700',out:'bg-amber-100 text-amber-700',search:'bg-blue-100 text-blue-700',error:'bg-rose-100 text-rose-700'},lab={in:'Приход',out:'Расход',search:'Сканер',error:'Ошибка'};
+  $('logList').innerHTML=S.logs.length?S.logs.map(l=>`<div class="p-2 rounded-xl bg-slate-50 border flex gap-2"><span class="mono text-slate-400 shrink-0">${l.t}</span><span class="px-1.5 rounded font-semibold shrink-0 ${col[l.type]}">${lab[l.type]}</span><span>${esc(l.text)}</span></div>`).join('')
+    :'<div class="py-6 text-center text-slate-400">Операций пока нет</div>';
+}
+function resetData(){ask('Сбросить все данные к демо-набору?',()=>{S=seed();receipt=[];cart=[];commit();toast('Данные сброшены')},'Сбросить')}
+
+/* ---- файл склада (резервная копия / перенос) ---- */
+async function saveFile(name,data,okMsg){
+  let d=null;try{d=window.claude?await claude.use('downloads'):null}catch(e){}
+  if(!d){
+    try{const b=data instanceof Blob?data:new Blob([data]),a=document.createElement('a');
+      a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();a.remove();
+      setTimeout(()=>URL.revokeObjectURL(a.href),4000);toast(okMsg,'success')}
+    catch(e){toast('Не удалось сохранить файл','error')}
+    return;
+  }
+  try{await d.save({filename:name,data});toast(okMsg,'success')}
+  catch(e){if(!e||e.code!=='declined')toast('Не удалось сохранить файл','error')}
+}
+function saveBackup(){
+  saveFile('mobisklad-sklad-'+new Date().toISOString().slice(0,10)+'.json',
+    JSON.stringify({app:'mobisklad',v:1,saved:new Date().toISOString(),products:S.products,logs:S.logs,nextId:S.nextId},null,1),'Файл склада сохранен');
+}
+function loadBackup(e){
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{
+    let d;try{d=JSON.parse(r.result);if(!d||!Array.isArray(d.products))throw 0}catch(err){toast('Это не файл склада МобиСклад','error');return}
+    const P=d.products.map(p=>({id:+p.id||0,sku:String(p.sku||''),barcode:String(p.barcode||''),name:String(p.name||''),category:String(p.category||CATS[0]),compat:String(p.compat||''),buy:+p.buy||0,sell:+p.sell||0,stock:+p.stock||0,min:+p.min||0}));
+    ask(`Загрузить склад из «${f.name}»? Текущие данные будут заменены (${P.length} поз.).`,()=>{
+      S={products:P,logs:Array.isArray(d.logs)?d.logs:[],nextId:Math.max(+d.nextId||0,...P.map(p=>p.id))+1};
+      receipt=[];cart=[];log('in','Склад загружен из файла');commit();toast('Склад загружен из файла','success');
+    },'Загрузить');
+  };
+  r.onerror=()=>toast('Не удалось прочитать файл','error');
+  r.readAsText(f);
+}
+
+/* ---- навигация и запуск ---- */
+function tab(t){
+  curTab=t;['stock','receipt','pos','log'].forEach(v=>$('v-'+v).classList.toggle('hidden',v!==t));
+  document.querySelectorAll('#tabs button').forEach(b=>b.className='px-4 py-2 rounded-xl whitespace-nowrap '+(b.dataset.t===t?'bg-slate-900 text-white':'bg-white border text-slate-600'));
+}
+function renderAll(){
+  const cur=$('cat').value||'all';
+  $('cat').innerHTML='<option value="all">Все категории</option>'+CATS.map(c=>`<option>${c}</option>`).join('');$('cat').value=cur;
+  renderKpis();renderStock();renderReceipt();renderPos();renderLog();
+}
+$('fCat').innerHTML=CATS.map(c=>`<option>${c}</option>`).join('');
+$('quick').innerHTML='<span class="text-slate-500 py-1">Тест:</span>'+S.products.slice(0,3).map(p=>`<button onclick="scan('${esc(p.barcode)}')" class="bg-slate-50 border rounded-lg px-2.5 py-1.5 hover:bg-blue-50">${esc(p.name.slice(0,22))}…</button>`).join('')+'<button onclick="S.products.length&&scan(S.products[Math.floor(Math.random()*S.products.length)].barcode)" class="text-blue-600 px-2">⚡ случайный</button>';
+document.addEventListener('keydown',e=>{if(e.key==='F2'){e.preventDefault();$('scan').focus()}});
+/* ---- сканирование штрихкодов камерой ---- */
+let camStream=null,camTimer=null,camLast={c:'',t:0},zxReader=null,bdet=null;
+function getDetector(){
+  if(!bdet&&'BarcodeDetector' in window){try{bdet=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128','code_39']})}catch(e){}}
+  return bdet;
+}
+function zxDecode(cv){
+  if(!window.ZXing)return null;
+  try{
+    if(!zxReader){
+      const h=new Map(),F=ZXing.BarcodeFormat;
+      h.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[F.EAN_13,F.EAN_8,F.UPC_A,F.UPC_E,F.CODE_128,F.CODE_39]);
+      h.set(ZXing.DecodeHintType.TRY_HARDER,true);
+      zxReader=new ZXing.MultiFormatReader();zxReader.setHints(h);
+    }
+    const bmp=new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(new ZXing.HTMLCanvasElementLuminanceSource(cv)));
+    return zxReader.decode(bmp).getText();
+  }catch(e){return null}
+}
+async function decodeSource(src,w,h){
+  const d=getDetector();
+  if(d){try{const r=await d.detect(src);if(r.length&&r[0].rawValue)return r[0].rawValue}catch(e){}}
+  if(window.ZXing){
+    const cv=document.createElement('canvas'),sc=Math.min(1,1280/Math.max(w,h));
+    cv.width=Math.round(w*sc);cv.height=Math.round(h*sc);cv.getContext('2d').drawImage(src,0,0,cv.width,cv.height);
+    return zxDecode(cv);
+  }
+  return null;
+}
+function camNorm(c){
+  const has=x=>S.products.some(p=>p.barcode===x||p.sku.toLowerCase()===x.toLowerCase());
+  if(has(c))return c;
+  if(c.length===12&&has('0'+c))return '0'+c;
+  if(c.length===13&&c[0]==='0'&&has(c.slice(1)))return c.slice(1);
+  return c;
+}
+async function openCam(){
+  $('camStatus').textContent='Запуск камеры…';$('camDlg').showModal();
+  try{
+    const fp=document.featurePolicy||document.permissionsPolicy,dg=[];
+    dg.push('getUserMedia: '+(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia?'есть':'нет'));
+    if(fp&&fp.allowsFeature)dg.push('камера в окне: '+(fp.allowsFeature('camera')?'разрешена':'заблокирована'));
+    dg.push('детектор: '+(getDetector()?'встроенный':(window.ZXing?'ZXing':'не загружен')));
+    $('camDiag').textContent=dg.join(' · ');
+  }catch(e){}
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+    $('camStatus').textContent='Живая камера недоступна в этом окне. Нажмите «Сделать фото штрихкода».';return}
+  try{
+    camStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
+    const v=$('camVideo');v.srcObject=camStream;await v.play();
+    $('camStatus').textContent='Наведите камеру на штрихкод'+(mode==='search'?'.':' · режим «'+(mode==='in'?'Приход +1':'Расход −1')+'», камера остается включенной.');
+    camLoop();
+  }catch(e){
+    stopCam();
+    $('camStatus').textContent=(e&&e.name==='NotAllowedError'?'Доступ к камере запрещен или недоступен в этом окне.':'Не удалось запустить камеру.')+' Нажмите «Сделать фото штрихкода» ниже.';
+  }
+}
+function camLoop(){
+  clearTimeout(camTimer);
+  camTimer=setTimeout(async()=>{
+    if(!camStream)return;
+    const v=$('camVideo');
+    if(v.videoWidth){const code=await decodeSource(v,v.videoWidth,v.videoHeight);if(code&&camStream)camFound(code)}
+    if(camStream)camLoop();
+  },250);
+}
+function camFound(raw){
+  const c=camNorm(String(raw).trim()),now=Date.now();
+  if(c===camLast.c&&now-camLast.t<2500){camLast.t=now;return}
+  camLast={c,t:now};
+  const p=S.products.find(x=>x.barcode===c||x.sku.toLowerCase()===c.toLowerCase());
+  if(mode==='search')$('camDlg').close();
+  scan(c);
+  if(mode!=='search'&&$('camDlg').open)
+    $('camStatus').textContent=p?`✓ ${p.name} — остаток ${p.stock} шт.`:`Код ${c} не найден в базе`;
+}
+function stopCam(){
+  clearTimeout(camTimer);camTimer=null;
+  if(camStream){camStream.getTracks().forEach(t=>t.stop());camStream=null}
+  $('camVideo').srcObject=null;
+}
+$('camDlg').addEventListener('close',stopCam);
+function camPhoto(e){
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  $('camStatus').textContent='Фото получено, распознаю…';
+  const img=new Image(),url=URL.createObjectURL(f);
+  img.onload=async()=>{
+    if(!getDetector()&&!window.ZXing){URL.revokeObjectURL(url);$('camStatus').textContent='Библиотека распознавания не загрузилась (проверьте интернет и обновите страницу).';return}
+    let code=null;
+    try{code=await decodeSource(img,img.naturalWidth,img.naturalHeight)}catch(err){URL.revokeObjectURL(url);$('camStatus').textContent='Ошибка распознавания: '+((err&&err.message)||err);return}
+    URL.revokeObjectURL(url);
+    if(code){camLast={c:'',t:0};camFound(code)}
+    else $('camStatus').textContent='Штрихкод не распознан. Сфотографируйте ближе и ровнее, чтобы штрихкод занимал большую часть кадра.';
+  };
+  img.onerror=()=>{URL.revokeObjectURL(url);$('camStatus').textContent='Не удалось открыть фото'};
+  img.src=url;
+}
+
+/* ---- разовый импорт позиций из Excel (Аксы_Кабеля_СЗУ.xlsx) ---- */
+const IMPORT1=[];
+function importOnce(){
+  const FK='mobisklad.imp1';
+  try{if(localStorage.getItem(FK))return}catch(e){}
+  const bcs=new Set(S.products.map(p=>p.barcode)),skus=new Set(S.products.map(p=>p.sku.toLowerCase()));let n=0;
+  IMPORT1.forEach(r=>{
+    if(bcs.has(r[1])||skus.has(r[0].toLowerCase()))return;
+    S.products.push({id:S.nextId++,sku:r[0],barcode:r[1],name:r[2],category:r[3],compat:'Универсальный',buy:r[4],sell:r[5],stock:r[6],min:1});
+    bcs.add(r[1]);skus.add(r[0].toLowerCase());n++;
+  });
+  log('in','Импорт из Excel: добавлено '+n+' позиций');save();
+  try{localStorage.setItem(FK,'1')}catch(e){}
+  setTimeout(()=>toast('Из Excel добавлено позиций: '+n,'success'),400);
+}
+importOnce();
+setMode('search');tab('stock');renderAll();
+</script>
+</body>
+</html>
